@@ -517,36 +517,44 @@ class RayPPOTrainer(object):
 
     def _save_checkpoint(self):
         # path: given_path + `/global_step_{global_steps}` + `/actor`
-        # local_global_step_folder = os.path.join(self.config.trainer.default_local_dir,
-        #                                         f'global_step_{self.global_steps}')
+        local_global_step_folder = os.path.join(self.config.trainer.default_local_dir,
+                                                f'_working')
+        
+        try:
+            actor_local_path = os.path.join(local_global_step_folder, 'actor')
 
-        local_global_step_folder = self.config.trainer.default_local_dir
-        if os.path.exists(local_global_step_folder) and os.path.isdir(local_global_step_folder):
-            shutil.rmtree(local_global_step_folder)
-            os.makedirs(local_global_step_folder)
+            actor_remote_path = None if self.config.trainer.default_hdfs_dir is None else os.path.join(
+                self.config.trainer.default_hdfs_dir, f'global_step_{self.global_steps}', 'actor')
+            self.actor_rollout_wg.save_checkpoint(actor_local_path, actor_remote_path, self.global_steps)
 
-        actor_local_path = os.path.join(local_global_step_folder, 'actor')
+            if self.use_critic:
+                critic_local_path = os.path.join(local_global_step_folder, 'critic')
+                critic_remote_path = None if self.config.trainer.default_hdfs_dir is None else os.path.join(
+                    self.config.trainer.default_hdfs_dir, f'global_step_{self.global_steps}', 'critic')
+                self.critic_wg.save_checkpoint(critic_local_path, critic_remote_path, self.global_steps)
 
-        actor_remote_path = None if self.config.trainer.default_hdfs_dir is None else os.path.join(
-            self.config.trainer.default_hdfs_dir, f'global_step_{self.global_steps}', 'actor')
-        self.actor_rollout_wg.save_checkpoint(actor_local_path, actor_remote_path, self.global_steps)
+            # save dataloader
+            dataloader_local_path = os.path.join(local_global_step_folder, 'data.pt')
+            import dill
+            torch.save(self.train_dataloader, dataloader_local_path, pickle_module=dill)
 
-        if self.use_critic:
-            critic_local_path = os.path.join(local_global_step_folder, 'critic')
-            critic_remote_path = None if self.config.trainer.default_hdfs_dir is None else os.path.join(
-                self.config.trainer.default_hdfs_dir, f'global_step_{self.global_steps}', 'critic')
-            self.critic_wg.save_checkpoint(critic_local_path, critic_remote_path, self.global_steps)
+            # latest checkpointed iteration tracker (for atomic usage)
+            local_latest_checkpointed_iteration = os.path.join(self.config.trainer.default_local_dir,
+                                                            'latest_checkpointed_iteration.txt')
+            with open(local_latest_checkpointed_iteration, 'w') as f:
+                f.write(str(self.global_steps))
+        
+        except Exception as e:
+            print(f'Error in saving checkpoint: {e}')
+            raise e
+        
+        local_global_step_folder_committed = self.config.trainer.default_local_dir
 
-        # save dataloader
-        dataloader_local_path = os.path.join(local_global_step_folder, 'data.pt')
-        import dill
-        torch.save(self.train_dataloader, dataloader_local_path, pickle_module=dill)
-
-        # latest checkpointed iteration tracker (for atomic usage)
-        local_latest_checkpointed_iteration = os.path.join(self.config.trainer.default_local_dir,
-                                                           'latest_checkpointed_iteration.txt')
-        with open(local_latest_checkpointed_iteration, 'w') as f:
-            f.write(str(self.global_steps))
+        if os.path.exists(local_global_step_folder_committed) and os.path.isdir(local_global_step_folder_committed):
+            shutil.rmtree(local_global_step_folder_committed)
+            os.makedirs(local_global_step_folder_committed)
+        shutil.move(local_global_step_folder, local_global_step_folder_committed)
+        
 
     def _balance_batch(self, batch: DataProto, metrics, logging_prefix='global_seqlen'):
         """Reorder the data on single controller such that each dp rank gets similar total tokens"""
