@@ -517,8 +517,7 @@ class RayPPOTrainer(object):
 
     def _save_checkpoint(self):
         # path: given_path + `/global_step_{global_steps}` + `/actor`
-        local_global_step_folder = os.path.join(self.config.trainer.default_local_dir,
-                                                f'_working')
+        local_global_step_folder = f'{self.config.trainer.default_local_dir}_working'
         
         try:
             actor_local_path = os.path.join(local_global_step_folder, 'actor')
