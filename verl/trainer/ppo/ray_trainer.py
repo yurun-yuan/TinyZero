@@ -538,10 +538,6 @@ class RayPPOTrainer(object):
             # torch.save(self.train_dataloader, dataloader_local_path, pickle_module=dill)
 
             # latest checkpointed iteration tracker (for atomic usage)
-            local_latest_checkpointed_iteration = os.path.join(self.config.trainer.default_local_dir,
-                                                            'latest_checkpointed_iteration.txt')
-            with open(local_latest_checkpointed_iteration, 'w') as f:
-                f.write(str(self.global_steps))
         
         except Exception as e:
             print(f'Error in saving checkpoint: {e}')
@@ -553,6 +549,10 @@ class RayPPOTrainer(object):
             shutil.rmtree(local_global_step_folder_committed)
             os.makedirs(local_global_step_folder_committed)
         shutil.move(local_global_step_folder, local_global_step_folder_committed)
+        local_latest_checkpointed_iteration = os.path.join(local_global_step_folder_committed,
+                                                            'latest_checkpointed_iteration.txt')
+        with open(local_latest_checkpointed_iteration, 'w') as f:
+            f.write(str(self.global_steps))
 
 
     def _balance_batch(self, batch: DataProto, metrics, logging_prefix='global_seqlen'):
